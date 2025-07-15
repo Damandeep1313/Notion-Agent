@@ -473,9 +473,18 @@ app.post("/update-page-with-content", async (req, res) => {
           title: [{ text: { content: value } }],
         };
       } else if (type === "rich_text") {
-        formattedProperties[key] = {
-          rich_text: [{ text: { content: value } }],
-        };
+  const existingTexts =
+    pageProps[key].rich_text?.map((t) => ({
+      type: "text",
+      text: { content: t.plain_text },
+    })) || [];
+
+  existingTexts.push({ type: "text", text: { content: value } });
+
+  formattedProperties[key] = {
+    rich_text: existingTexts,
+  };
+}
       } else if (type === "select") {
         formattedProperties[key] = {
           select: { name: value },
