@@ -466,12 +466,22 @@ app.post("/update-page1", async (req, res) => {
     });
 
     const pageProps = pageDetails.data.properties;
-    console.log("📄 Existing Page Properties Types:", 
+    console.log("📄 Existing Page Properties Types:",
       Object.keys(pageProps).map((k) => `${k}(${pageProps[k].type})`)
     );
 
-    // ✅ Format properties based on real types
     const formattedProperties = {};
+
+    // ✅ Force Title Update (even if not in pageProps)
+    if (properties.Title) {
+      console.log(`✅ Replacing Title with: ${properties.Title}`);
+      formattedProperties["Title"] = {
+        title: [{ text: { content: properties.Title } }],
+      };
+      delete properties.Title; // avoid re-processing in the loop
+    }
+
+    // ✅ Format all other properties
     for (const [key, value] of Object.entries(properties)) {
       if (!pageProps[key]) {
         console.warn(`⚠️ Skipping non-existent property: ${key}`);
@@ -481,50 +491,49 @@ app.post("/update-page1", async (req, res) => {
       const type = pageProps[key].type;
       console.log(`🔧 Updating property "${key}" (type: ${type}) with value: ${value}`);
 
-switch (type) {
-  case "title":
-    formattedProperties[key] = {
-      title: [{ text: { content: value } }],
-    };
-    break;
-  case "rich_text":
-    formattedProperties[key] = {
-      rich_text: [{ type: "text", text: { content: value } }],
-    };
-    break;
-  case "multi_select":
-    formattedProperties[key] = {
-      multi_select: [{ name: value }],
-    };
-    break;
-  case "select":
-    formattedProperties[key] = { select: { name: value } };
-    break;
-  case "status":
-    formattedProperties[key] = { status: { name: value } };
-    break;
-  case "date":
-    formattedProperties[key] = { date: { start: value } };
-    break;
-  case "number":
-    formattedProperties[key] = { number: Number(value) };
-    break;
-  case "checkbox":
-    formattedProperties[key] = { checkbox: Boolean(value) };
-    break;
-  case "url":
-    formattedProperties[key] = { url: String(value) };
-    break;
-  case "email":
-    formattedProperties[key] = { email: String(value) };
-    break;
-  case "phone_number":
-    formattedProperties[key] = { phone_number: String(value) };
-    break;
-  default:
-    console.warn(`⚠️ Unsupported type (${type}), skipping: ${key}`);
-}
-
+      switch (type) {
+        case "title":
+          formattedProperties[key] = {
+            title: [{ text: { content: value } }],
+          };
+          break;
+        case "rich_text":
+          formattedProperties[key] = {
+            rich_text: [{ type: "text", text: { content: value } }],
+          };
+          break;
+        case "multi_select":
+          formattedProperties[key] = {
+            multi_select: [{ name: value }],
+          };
+          break;
+        case "select":
+          formattedProperties[key] = { select: { name: value } };
+          break;
+        case "status":
+          formattedProperties[key] = { status: { name: value } };
+          break;
+        case "date":
+          formattedProperties[key] = { date: { start: value } };
+          break;
+        case "number":
+          formattedProperties[key] = { number: Number(value) };
+          break;
+        case "checkbox":
+          formattedProperties[key] = { checkbox: Boolean(value) };
+          break;
+        case "url":
+          formattedProperties[key] = { url: String(value) };
+          break;
+        case "email":
+          formattedProperties[key] = { email: String(value) };
+          break;
+        case "phone_number":
+          formattedProperties[key] = { phone_number: String(value) };
+          break;
+        default:
+          console.warn(`⚠️ Unsupported type (${type}), skipping: ${key}`);
+      }
     }
 
     // ✅ Update properties first
