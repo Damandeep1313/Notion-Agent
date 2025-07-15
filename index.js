@@ -440,7 +440,7 @@ app.post("/get-page-properties", async (req, res) => {
 
 // ✅ Smart: Update page properties + append content
 // ✅ Smart: Update page properties + append content (with deep logging)
-app.post("/update-page-with-content", async (req, res) => {
+app.post("/update-page1", async (req, res) => {
   console.log("\n===================== 📌 /update-page-with-content CALLED =====================");
   console.log("📝 Request Body:", JSON.stringify(req.body, null, 2));
 
