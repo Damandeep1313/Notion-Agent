@@ -438,10 +438,9 @@ app.post("/get-page-properties", async (req, res) => {
 });
 
 
-// ✅ Smart: Update page properties + append content
 // ✅ Smart: Update page properties + append content (with deep logging)
 app.post("/update-page1", async (req, res) => {
-  console.log("\n===================== 📌 /update-page-with-content CALLED =====================");
+  console.log("\n===================== 📌 /update-page1 CALLED =====================");
   console.log("📝 Request Body:", JSON.stringify(req.body, null, 2));
 
   try {
@@ -467,9 +466,9 @@ app.post("/update-page1", async (req, res) => {
     });
 
     const pageProps = pageDetails.data.properties;
-    console.log("📄 Existing Page Properties Types:", Object.keys(pageProps).map(
-      (k) => `${k}(${pageProps[k].type})`
-    ));
+    console.log("📄 Existing Page Properties Types:", 
+      Object.keys(pageProps).map((k) => `${k}(${pageProps[k].type})`)
+    );
 
     // ✅ Format properties based on real types
     const formattedProperties = {};
@@ -482,34 +481,61 @@ app.post("/update-page1", async (req, res) => {
       const type = pageProps[key].type;
       console.log(`🔧 Updating property "${key}" (type: ${type}) with value: ${value}`);
 
-      if (type === "title") {
-        formattedProperties[key] = {
-          title: [{ text: { content: value } }],
-        };
-      } else if (type === "rich_text") {
-        const existingTexts =
-          pageProps[key].rich_text?.map((t) => ({
-            type: "text",
-            text: { content: t.plain_text },
-          })) || [];
-
-        existingTexts.push({ type: "text", text: { content: value } });
-
-        formattedProperties[key] = {
-          rich_text: existingTexts,
-        };
-      } else if (type === "select") {
-        formattedProperties[key] = {
-          select: { name: value },
-        };
-      } else if (type === "status") {
-        formattedProperties[key] = {
-          status: { name: value },
-        };
-      } else if (type === "date") {
-        formattedProperties[key] = {
-          date: { start: value },
-        };
+      switch (type) {
+        case "title": {
+          const existingTitle =
+            pageProps[key].title?.map((t) => ({
+              text: { content: t.plain_text },
+            })) || [];
+          existingTitle.push({ text: { content: value } });
+          formattedProperties[key] = { title: existingTitle };
+          break;
+        }
+        case "rich_text": {
+          const existingTexts =
+            pageProps[key].rich_text?.map((t) => ({
+              type: "text",
+              text: { content: t.plain_text },
+            })) || [];
+          existingTexts.push({ type: "text", text: { content: value } });
+          formattedProperties[key] = { rich_text: existingTexts };
+          break;
+        }
+        case "multi_select": {
+          const existingMulti =
+            pageProps[key].multi_select?.map((m) => ({ name: m.name })) || [];
+          if (!existingMulti.find((m) => m.name === value)) {
+            existingMulti.push({ name: value });
+          }
+          formattedProperties[key] = { multi_select: existingMulti };
+          break;
+        }
+        case "select":
+          formattedProperties[key] = { select: { name: value } };
+          break;
+        case "status":
+          formattedProperties[key] = { status: { name: value } };
+          break;
+        case "date":
+          formattedProperties[key] = { date: { start: value } };
+          break;
+        case "number":
+          formattedProperties[key] = { number: Number(value) };
+          break;
+        case "checkbox":
+          formattedProperties[key] = { checkbox: Boolean(value) };
+          break;
+        case "url":
+          formattedProperties[key] = { url: String(value) };
+          break;
+        case "email":
+          formattedProperties[key] = { email: String(value) };
+          break;
+        case "phone_number":
+          formattedProperties[key] = { phone_number: String(value) };
+          break;
+        default:
+          console.warn(`⚠️ Unsupported type (${type}), skipping: ${key}`);
       }
     }
 
@@ -585,7 +611,6 @@ app.post("/update-page1", async (req, res) => {
     });
   }
 });
-
 
 
 // ✅ Fetch all pages (rows) from a database (Clean & Lightweight)
