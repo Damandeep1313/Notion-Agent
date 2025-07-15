@@ -315,63 +315,63 @@ app.post("/delete-database", async (req, res) => {
 
 
 
-// // ✅ Update Page Endpoint (Smart)
-// app.post("/update-page", async (req, res) => {
-//   try {
-//     const { page_id, properties } = req.body;
-//     const notionToken = req.headers["notion-token"];
+// ✅ Update Page Endpoint (Smart)
+app.post("/update-page", async (req, res) => {
+  try {
+    const { page_id, properties } = req.body;
+    const notionToken = req.headers["notion-token"];
 
-//     if (!notionToken) {
-//       return res.status(400).json({ success: false, message: "Missing notion-token in headers" });
-//     }
-//     if (!page_id || !properties) {
-//       return res.status(400).json({ success: false, message: "page_id and properties are required" });
-//     }
+    if (!notionToken) {
+      return res.status(400).json({ success: false, message: "Missing notion-token in headers" });
+    }
+    if (!page_id || !properties) {
+      return res.status(400).json({ success: false, message: "page_id and properties are required" });
+    }
 
-//     const formattedProperties = {};
+    const formattedProperties = {};
 
-//     // ✅ Smartly format properties based on key/type
-//     Object.entries(properties).forEach(([key, value]) => {
-//       if (typeof value === "string") {
-//         if (key.toLowerCase() === "status") {
-//           formattedProperties[key] = { status: { name: value } };
-//         } else if (key.toLowerCase().includes("date") || key.toLowerCase() === "deadline") {
-//           formattedProperties[key] = { date: { start: value } };
-//         } else {
-//           formattedProperties[key] = {
-//             title: [{ text: { content: value } }],
-//           };
-//         }
-//       } else {
-//         formattedProperties[key] = value; // If already formatted, use as-is
-//       }
-//     });
+    // ✅ Smartly format properties based on key/type
+    Object.entries(properties).forEach(([key, value]) => {
+      if (typeof value === "string") {
+        if (key.toLowerCase() === "status") {
+          formattedProperties[key] = { status: { name: value } };
+        } else if (key.toLowerCase().includes("date") || key.toLowerCase() === "deadline") {
+          formattedProperties[key] = { date: { start: value } };
+        } else {
+          formattedProperties[key] = {
+            title: [{ text: { content: value } }],
+          };
+        }
+      } else {
+        formattedProperties[key] = value; // If already formatted, use as-is
+      }
+    });
 
-//     const response = await axios.patch(
-//       `https://api.notion.com/v1/pages/${page_id}`,
-//       { properties: formattedProperties },
-//       {
-//         headers: {
-//           Authorization: `Bearer ${notionToken}`,
-//           "Content-Type": "application/json",
-//           "Notion-Version": "2022-06-28",
-//         },
-//       }
-//     );
+    const response = await axios.patch(
+      `https://api.notion.com/v1/pages/${page_id}`,
+      { properties: formattedProperties },
+      {
+        headers: {
+          Authorization: `Bearer ${notionToken}`,
+          "Content-Type": "application/json",
+          "Notion-Version": "2022-06-28",
+        },
+      }
+    );
 
-//     res.status(200).json({
-//       success: true,
-//       page_id: response.data.id,
-//       url: response.data.url,
-//     });
-//   } catch (error) {
-//     console.error(error.response?.data || error.message);
-//     res.status(500).json({
-//       success: false,
-//       error: error.response?.data || error.message,
-//     });
-//   }
-// });
+    res.status(200).json({
+      success: true,
+      page_id: response.data.id,
+      url: response.data.url,
+    });
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: error.response?.data || error.message,
+    });
+  }
+});
 
 
 
