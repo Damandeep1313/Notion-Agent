@@ -439,6 +439,11 @@ app.post("/get-page-properties", async (req, res) => {
 
 
 // ✅ Smart: Update page properties + append content (with deep logging)
+const express = require("express");
+const axios = require("axios");
+const app = express();
+app.use(express.json());
+
 app.post("/update-page1", async (req, res) => {
   console.log("\n===================== 📌 /update-page1 CALLED =====================");
   console.log("📝 Request Body:", JSON.stringify(req.body, null, 2));
@@ -447,7 +452,6 @@ app.post("/update-page1", async (req, res) => {
     const { page_id, content, ...properties } = req.body;
     const notionToken = req.headers["notion-token"];
 
-    // ✅ Validate headers & page_id
     if (!notionToken) {
       console.error("❌ Missing notion-token in headers");
       return res.status(400).json({ success: false, message: "Missing notion-token in headers" });
@@ -457,6 +461,7 @@ app.post("/update-page1", async (req, res) => {
       return res.status(400).json({ success: false, message: "page_id is required" });
     }
 
+    // ✅ Fetch page properties to detect types
     console.log(`🔍 Fetching page details for page_id: ${page_id}`);
     const pageDetails = await axios.get(`https://api.notion.com/v1/pages/${page_id}`, {
       headers: {
@@ -466,49 +471,78 @@ app.post("/update-page1", async (req, res) => {
     });
 
     const pageProps = pageDetails.data.properties;
-    console.log(
-      "📄 Existing Page Properties:",
+    console.log("📄 Existing Page Properties Types:", 
       Object.keys(pageProps).map((k) => `${k}(${pageProps[k].type})`)
     );
 
-    // ✅ Format properties based on real types
-    const formattedProperties = {};
-    for (const [key, value] of Object.entries(properties)) {
-      if (!pageProps[key]) {
-        console.warn(`⚠️ Skipping non-existent property: ${key}`);
-        continue;
-      }
+    // ✅ Normalize property keys (case-insensitive match)
+    const normalizedProps = {};
+    for (const key of Object.keys(properties)) {
+      const matchedKey = Object.keys(pageProps).find(
+        (prop) => prop.toLowerCase() === key.toLowerCase()
+      );
+      if (matchedKey) normalizedProps[matchedKey] = properties[key];
+      else console.warn(`⚠️ Property "${key}" does not exist in Notion page`);
+    }
 
+    // ✅ Format properties based on real types (FULL REPLACEMENT)
+    const formattedProperties = {};
+    for (const [key, value] of Object.entries(normalizedProps)) {
       const type = pageProps[key].type;
       console.log(`🔧 Updating property "${key}" (type: ${type}) with value: ${value}`);
 
       switch (type) {
         case "title":
-          formattedProperties[key] = { title: [{ text: { content: value } }] };
+          formattedProperties[key] = {
+            title: value ? [{ text: { content: String(value) } }] : [],
+          };
           break;
         case "rich_text":
-          formattedProperties[key] = { rich_text: [{ text: { content: value } }] };
+          formattedProperties[key] = {
+            rich_text: value ? [{ type: "text", text: { content: String(value) } }] : [],
+          };
+          break;
+        case "multi_select":
+          formattedProperties[key] = {
+            multi_select: value
+              ? (Array.isArray(value)
+                  ? value.map((v) => ({ name: v }))
+                  : [{ name: String(value) }])
+              : [],
+          };
           break;
         case "select":
-          formattedProperties[key] = { select: { name: value } };
+          formattedProperties[key] = { select: value ? { name: String(value) } : null };
           break;
         case "status":
-          formattedProperties[key] = { status: { name: value } };
+          formattedProperties[key] = { status: value ? { name: String(value) } : null };
           break;
         case "date":
-          formattedProperties[key] = { date: { start: value } };
+          formattedProperties[key] = { date: value ? { start: value } : null };
+          break;
+        case "number":
+          formattedProperties[key] = { number: value !== "" ? Number(value) : null };
+          break;
+        case "checkbox":
+          formattedProperties[key] = { checkbox: Boolean(value) };
+          break;
+        case "url":
+          formattedProperties[key] = { url: value ? String(value) : null };
+          break;
+        case "email":
+          formattedProperties[key] = { email: value ? String(value) : null };
+          break;
+        case "phone_number":
+          formattedProperties[key] = { phone_number: value ? String(value) : null };
           break;
         default:
-          console.warn(`⚠️ Unsupported type (${type}), skipping: ${key}`);
+          console.warn(`⚠️ Unsupported property type: ${key} (${type})`);
       }
     }
 
-    // ✅ Update properties first
+    // ✅ Update properties
     if (Object.keys(formattedProperties).length > 0) {
-      console.log(
-        "✅ Sending PATCH request to update properties:",
-        JSON.stringify(formattedProperties, null, 2)
-      );
+      console.log("✅ Sending PATCH request to update properties:", JSON.stringify(formattedProperties, null, 2));
       await axios.patch(
         `https://api.notion.com/v1/pages/${page_id}`,
         { properties: formattedProperties },
@@ -524,26 +558,34 @@ app.post("/update-page1", async (req, res) => {
       console.log("⚠️ No valid properties to update.");
     }
 
-    // ✅ Append blocks (if provided)
+    // ✅ Replace blocks (clear old + append new)
     let appendedBlocks = 0;
     if (content) {
-      console.log("📝 Appending Content Blocks:", JSON.stringify(content, null, 2));
+      console.log("📝 Replacing Content Blocks:", content);
 
+      // 🗑️ (Optional) CLEAR OLD BLOCKS
+      const existingBlocks = await axios.get(
+        `https://api.notion.com/v1/blocks/${page_id}/children?page_size=100`,
+        { headers: { Authorization: `Bearer ${notionToken}`, "Notion-Version": "2022-06-28" } }
+      );
+      for (const block of existingBlocks.data.results) {
+        await axios.delete(`https://api.notion.com/v1/blocks/${block.id}`, {
+          headers: { Authorization: `Bearer ${notionToken}`, "Notion-Version": "2022-06-28" },
+        });
+      }
+
+      // ➕ Append new blocks
       const blocks = Array.isArray(content)
         ? content.map((text) => ({
             object: "block",
             type: "paragraph",
-            paragraph: {
-              rich_text: [{ type: "text", text: { content: text } }],
-            },
+            paragraph: { rich_text: [{ type: "text", text: { content: text } }] },
           }))
         : [
             {
               object: "block",
               type: "paragraph",
-              paragraph: {
-                rich_text: [{ type: "text", text: { content: content } }],
-              },
+              paragraph: { rich_text: [{ type: "text", text: { content: String(content) } }] },
             },
           ];
 
@@ -559,9 +601,7 @@ app.post("/update-page1", async (req, res) => {
         }
       );
       appendedBlocks = blockResponse.data.results.length;
-      console.log(`✅ Appended ${appendedBlocks} block(s) successfully.`);
-    } else {
-      console.log("⚠️ No content blocks provided to append.");
+      console.log(`✅ Replaced with ${appendedBlocks} new block(s).`);
     }
 
     console.log("🎉 Update completed successfully!");
