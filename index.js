@@ -439,19 +439,26 @@ app.post("/get-page-properties", async (req, res) => {
 
 
 // ✅ Smart: Update page properties + append content
+// ✅ Smart: Update page properties + append content (with deep logging)
 app.post("/update-page-with-content", async (req, res) => {
+  console.log("\n===================== 📌 /update-page-with-content CALLED =====================");
+  console.log("📝 Request Body:", JSON.stringify(req.body, null, 2));
+
   try {
     const { page_id, content, ...properties } = req.body;
     const notionToken = req.headers["notion-token"];
 
     if (!notionToken) {
+      console.error("❌ Missing notion-token in headers");
       return res.status(400).json({ success: false, message: "Missing notion-token in headers" });
     }
     if (!page_id) {
+      console.error("❌ page_id is required");
       return res.status(400).json({ success: false, message: "page_id is required" });
     }
 
     // ✅ Fetch page properties to detect types
+    console.log(`🔍 Fetching page details for page_id: ${page_id}`);
     const pageDetails = await axios.get(`https://api.notion.com/v1/pages/${page_id}`, {
       headers: {
         Authorization: `Bearer ${notionToken}`,
@@ -460,31 +467,37 @@ app.post("/update-page-with-content", async (req, res) => {
     });
 
     const pageProps = pageDetails.data.properties;
+    console.log("📄 Existing Page Properties Types:", Object.keys(pageProps).map(
+      (k) => `${k}(${pageProps[k].type})`
+    ));
 
     // ✅ Format properties based on real types
     const formattedProperties = {};
     for (const [key, value] of Object.entries(properties)) {
-      if (!pageProps[key]) continue; // skip non-existent properties
+      if (!pageProps[key]) {
+        console.warn(`⚠️ Skipping non-existent property: ${key}`);
+        continue;
+      }
 
       const type = pageProps[key].type;
+      console.log(`🔧 Updating property "${key}" (type: ${type}) with value: ${value}`);
 
       if (type === "title") {
         formattedProperties[key] = {
           title: [{ text: { content: value } }],
         };
       } else if (type === "rich_text") {
-  const existingTexts =
-    pageProps[key].rich_text?.map((t) => ({
-      type: "text",
-      text: { content: t.plain_text },
-    })) || [];
+        const existingTexts =
+          pageProps[key].rich_text?.map((t) => ({
+            type: "text",
+            text: { content: t.plain_text },
+          })) || [];
 
-  existingTexts.push({ type: "text", text: { content: value } });
+        existingTexts.push({ type: "text", text: { content: value } });
 
-  formattedProperties[key] = {
-    rich_text: existingTexts,
-  };
-}
+        formattedProperties[key] = {
+          rich_text: existingTexts,
+        };
       } else if (type === "select") {
         formattedProperties[key] = {
           select: { name: value },
@@ -502,6 +515,7 @@ app.post("/update-page-with-content", async (req, res) => {
 
     // ✅ Update properties first
     if (Object.keys(formattedProperties).length > 0) {
+      console.log("✅ Sending PATCH request to update properties:", JSON.stringify(formattedProperties, null, 2));
       await axios.patch(
         `https://api.notion.com/v1/pages/${page_id}`,
         { properties: formattedProperties },
@@ -513,11 +527,14 @@ app.post("/update-page-with-content", async (req, res) => {
           },
         }
       );
+    } else {
+      console.log("⚠️ No valid properties to update.");
     }
 
     // ✅ Append blocks (if provided)
     let appendedBlocks = 0;
     if (content) {
+      console.log("📝 Appending Content Blocks:", content);
       const blocks = Array.isArray(content)
         ? content.map((text) => ({
             object: "block",
@@ -548,8 +565,12 @@ app.post("/update-page-with-content", async (req, res) => {
         }
       );
       appendedBlocks = blockResponse.data.results.length;
+      console.log(`✅ Appended ${appendedBlocks} block(s) successfully.`);
+    } else {
+      console.log("⚠️ No content blocks provided to append.");
     }
 
+    console.log("🎉 Update completed successfully!");
     res.status(200).json({
       success: true,
       page_id,
@@ -557,13 +578,14 @@ app.post("/update-page-with-content", async (req, res) => {
       appendedBlocks,
     });
   } catch (error) {
-    console.error(error.response?.data || error.message);
+    console.error("❌ ERROR OCCURRED:", error.response?.data || error.message);
     res.status(500).json({
       success: false,
       error: error.response?.data || error.message,
     });
   }
 });
+
 
 
 // ✅ Fetch all pages (rows) from a database (Clean & Lightweight)
