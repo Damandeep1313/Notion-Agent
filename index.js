@@ -447,6 +447,7 @@ app.post("/update-page1", async (req, res) => {
     const { page_id, content, ...properties } = req.body;
     const notionToken = req.headers["notion-token"];
 
+    // ✅ Validate headers & page_id
     if (!notionToken) {
       console.error("❌ Missing notion-token in headers");
       return res.status(400).json({ success: false, message: "Missing notion-token in headers" });
@@ -456,7 +457,6 @@ app.post("/update-page1", async (req, res) => {
       return res.status(400).json({ success: false, message: "page_id is required" });
     }
 
-    // ✅ Fetch page properties to detect types
     console.log(`🔍 Fetching page details for page_id: ${page_id}`);
     const pageDetails = await axios.get(`https://api.notion.com/v1/pages/${page_id}`, {
       headers: {
@@ -466,22 +466,13 @@ app.post("/update-page1", async (req, res) => {
     });
 
     const pageProps = pageDetails.data.properties;
-    console.log("📄 Existing Page Properties Types:",
+    console.log(
+      "📄 Existing Page Properties:",
       Object.keys(pageProps).map((k) => `${k}(${pageProps[k].type})`)
     );
 
+    // ✅ Format properties based on real types
     const formattedProperties = {};
-
-    // ✅ Force Title Update (even if not in pageProps)
-    if (properties.Title) {
-      console.log(`✅ Replacing Title with: ${properties.Title}`);
-      formattedProperties["Title"] = {
-        title: [{ text: { content: properties.Title } }],
-      };
-      delete properties.Title; // avoid re-processing in the loop
-    }
-
-    // ✅ Format all other properties
     for (const [key, value] of Object.entries(properties)) {
       if (!pageProps[key]) {
         console.warn(`⚠️ Skipping non-existent property: ${key}`);
@@ -493,19 +484,10 @@ app.post("/update-page1", async (req, res) => {
 
       switch (type) {
         case "title":
-          formattedProperties[key] = {
-            title: [{ text: { content: value } }],
-          };
+          formattedProperties[key] = { title: [{ text: { content: value } }] };
           break;
         case "rich_text":
-          formattedProperties[key] = {
-            rich_text: [{ type: "text", text: { content: value } }],
-          };
-          break;
-        case "multi_select":
-          formattedProperties[key] = {
-            multi_select: [{ name: value }],
-          };
+          formattedProperties[key] = { rich_text: [{ text: { content: value } }] };
           break;
         case "select":
           formattedProperties[key] = { select: { name: value } };
@@ -516,25 +498,88 @@ app.post("/update-page1", async (req, res) => {
         case "date":
           formattedProperties[key] = { date: { start: value } };
           break;
-        case "number":
-          formattedProperties[key] = { number: Number(value) };
-          break;
-        case "checkbox":
-          formattedProperties[key] = { checkbox: Boolean(value) };
-          break;
-        case "url":
-          formattedProperties[key] = { url: String(value) };
-          break;
-        case "email":
-          formattedProperties[key] = { email: String(value) };
-          break;
-        case "phone_number":
-          formattedProperties[key] = { phone_number: String(value) };
-          break;
         default:
           console.warn(`⚠️ Unsupported type (${type}), skipping: ${key}`);
       }
     }
+
+    // ✅ Update properties first
+    if (Object.keys(formattedProperties).length > 0) {
+      console.log(
+        "✅ Sending PATCH request to update properties:",
+        JSON.stringify(formattedProperties, null, 2)
+      );
+      await axios.patch(
+        `https://api.notion.com/v1/pages/${page_id}`,
+        { properties: formattedProperties },
+        {
+          headers: {
+            Authorization: `Bearer ${notionToken}`,
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28",
+          },
+        }
+      );
+    } else {
+      console.log("⚠️ No valid properties to update.");
+    }
+
+    // ✅ Append blocks (if provided)
+    let appendedBlocks = 0;
+    if (content) {
+      console.log("📝 Appending Content Blocks:", JSON.stringify(content, null, 2));
+
+      const blocks = Array.isArray(content)
+        ? content.map((text) => ({
+            object: "block",
+            type: "paragraph",
+            paragraph: {
+              rich_text: [{ type: "text", text: { content: text } }],
+            },
+          }))
+        : [
+            {
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: [{ type: "text", text: { content: content } }],
+              },
+            },
+          ];
+
+      const blockResponse = await axios.patch(
+        `https://api.notion.com/v1/blocks/${page_id}/children`,
+        { children: blocks },
+        {
+          headers: {
+            Authorization: `Bearer ${notionToken}`,
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28",
+          },
+        }
+      );
+      appendedBlocks = blockResponse.data.results.length;
+      console.log(`✅ Appended ${appendedBlocks} block(s) successfully.`);
+    } else {
+      console.log("⚠️ No content blocks provided to append.");
+    }
+
+    console.log("🎉 Update completed successfully!");
+    res.status(200).json({
+      success: true,
+      page_id,
+      updatedProperties: Object.keys(formattedProperties),
+      appendedBlocks,
+    });
+  } catch (error) {
+    console.error("❌ ERROR OCCURRED:", error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: error.response?.data || error.message,
+    });
+  }
+});
+
 
     // ✅ Update properties first
     if (Object.keys(formattedProperties).length > 0) {
